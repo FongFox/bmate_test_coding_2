@@ -4,6 +4,7 @@ import json
 from typing import Optional, Dict, Tuple
 import requests
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 # ==============================
 # 1) HTTP: download HTML (use bytes)
@@ -174,6 +175,49 @@ def extract_map_coords_simple(soup: BeautifulSoup) -> Tuple[Optional[str], Optio
             pass
     return None, None
 
+def extract_map_coords_basic(soup: BeautifulSoup):
+    lat_el = soup.select_one(".latitude")
+    lng_el = soup.select_one(".longitude")
+    lat = lat_el.get_text(strip=True) if lat_el else None
+    lng = lng_el.get_text(strip=True) if lng_el else None
+    return lat, lng
+
+def extract_stations_basic(soup: BeautifulSoup, limit: int = 5):
+    result = []
+
+    for dt in soup.select("dt"):
+        if dt.get_text(strip=True) == "交通":
+            dd = dt.find_next_sibling("dd")
+            if not dd:
+                break
+            for li in dd.select("li"):
+                t = li.get_text(" ", strip=True)
+
+                m = re.search(r"(.+?)／(.+?駅)", t) or re.search(r"(.+?)/(.+?駅)", t)
+                line = m.group(1).strip() if m else None
+                station = m.group(2).strip() if m else None
+
+                m2 = re.search(r"徒歩\s*(\d+)\s*分", t)
+                walk = m2.group(1) if m2 else None
+                result.append({"line": line, "station": station, "walk": walk})
+                if len(result) >= limit:
+                    break
+            break
+    return result
+
+def extract_images_basic(soup: BeautifulSoup, base_url: str, limit: int = 8):
+    urls = []
+    for img in soup.select("img"):
+        src = img.get("data-src") or img.get("src")
+        if not src or src.startswith("data:"):
+            continue
+        abs_url = urljoin(base_url, src)
+        if abs_url not in urls:
+            urls.append(abs_url)
+        if len(urls) >= limit:
+            break
+    return urls
+
 # ==============================
 # 3) Orchestrator
 # ==============================
@@ -194,6 +238,11 @@ def parse_property(url: str, html: bytes) -> Dict[str, Optional[str]]:
     building_name_en = to_english_name_simple(name_jp)
 
     lat, lng = extract_map_coords_simple(soup)
+    lat, lng = extract_map_coords_basic(soup)
+
+    stations = extract_stations_basic(soup, limit=5)
+
+    imgs = extract_images_basic(soup, url, limit=8)
 
     data: Dict[str, Optional[str]] = {
         "link": url,
@@ -226,20 +275,26 @@ def parse_property(url: str, html: bytes) -> Dict[str, Optional[str]]:
         "create_date": None,
     }
 
+    data.update({
+        "map_lat": lat,
+        "map_lng": lng,
+    })
+
     for i in range(1, 6):
-        data[f"station_name_{i}"] = None
-        data[f"train_line_name_{i}"] = None
-        data[f"walk_{i}"] = None
+        src = stations[i - 1] if i - 1 < len(stations) else {}
+        data[f"station_name_{i}"] = src.get("station")
+        data[f"train_line_name_{i}"] = src.get("line")
+        data[f"walk_{i}"] = src.get("walk")
         data[f"bus_{i}"] = None
         data[f"car_{i}"] = None
         data[f"cycle_{i}"] = None
 
     for i in range(1, 17):
+        url_i = imgs[i - 1] if i - 1 < len(imgs) else None
+        data[f"image_url_{i}"] = url_i
         data[f"image_category_{i}"] = None
-        data[f"image_url_{i}"] = None
 
     return data
-
 
 # ==============================
 # 4) CLI
@@ -266,7 +321,6 @@ def main():
     with open("page.html", "wb") as f:
         f.write(html)
     print("Wrote out.json & page.html")
-
 
 if __name__ == "__main__":
     main()
