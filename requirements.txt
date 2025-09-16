@@ -1,0 +1,7 @@
+# Core dependencies
+requests
+beautifulsoup4
+lxml
+
+# Optional: enable JP->Romaji conversion for building_name_en
+pykakasi
