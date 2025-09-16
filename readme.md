@@ -288,3 +288,12 @@ python result.py --url https://rent.tokyu-housing-lease.co.jp/rent/8034884/11702
 
 Good luck!
 
+
+## Note
+
+```bash
+pip install -r requirements.txt
+```
+
+The script prints JSON to stdout and writes `out.json` and `page.html` for inspection.
+Fields not present on the source page are set to null.
